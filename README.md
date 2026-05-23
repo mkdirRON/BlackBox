@@ -5,7 +5,7 @@ BlackBox is a local developer tool that creates an audit trail for AI coding ses
 
 ## Core Functionality 
 
-'''bash
+''' bash
 blackbox init — installs hooks into .claude/settings.json
 blackbox serve — opens a local web UI at localhost:7331 showing a session timeline
 blackbox log — lists recent sessions in the terminal
