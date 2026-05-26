@@ -3,6 +3,9 @@ package main
 import (
 	"fmt"
 	"os"
+
+	"github.com/mkdirRON/BlackBox/internal/db"
+	_ "modernc.org/sqlite"
 )
 
 func runInit() {
@@ -37,6 +40,10 @@ func main() {
 	if len(os.Args) < 2 {
 		fmt.Print("to run BlackBox: BlackBox <command_name> \n")
 		os.Exit(1)
+	}
+	_, err := db.Open()
+	if err != nil {
+		fmt.Println("issue encountered when setting up DB.", err)
 	}
 
 	// check cmd and return corrasponding action(s)
