@@ -131,3 +131,42 @@ func (d *DB) GetSessions() ([]Session, error) {
 	}
 	return res, nil
 }
+
+func (d *DB) InsertDiff(diffID string, turnID string, filePath string, changesMade string, linesAdded int, linesRemoved int) error {
+	_, err := d.conn.Exec(`INSERT INTO diff (diff_id, turn_id, file_path, changes_made, lines_added, lines_removed)	
+																								VALUES (?,?,?,?,?,?) ON CONFLICT(diff_id) DO NOTHING`,
+		diffID, turnID, filePath, changesMade, linesAdded, linesRemoved)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (d *DB) InsertTurn(turnID string, sessionID string, prompt string, turnNumber int) error {
+	_, err := d.conn.Exec(`INSERT INTO turns (turn_id, sessionID, prompt, turn_number, time_prompt_made)
+		 																							 VALUES (?,?,?,?,?) ON CONFLICT(turn_id) DO NOTHING`, turnID, sessionID, prompt, turnNumber, time.Now().Unix())
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+// CREATE TABLE IF NOT EXISTS turns (
+//     turn_id TEXT PRIMARY KEY,
+//     session_id TEXT,
+//     prompt TEXT,
+//     turn_number INTEGER,
+//     time_prompt_made INTEGER,
+//     FOREIGN KEY (session_id) REFERENCES sessions(session_id)
+// );
+//
+// CREATE TABLE IF NOT EXISTS diff (
+//     diff_id TEXT PRIMARY KEY,
+//     turn_id TEXT,
+//     file_path TEXT,
+//     changes_made TEXT,
+//     lines_added INTEGER,
+//     lines_removed INTEGER,
+//     FOREIGN KEY (turn_id) REFERENCES turns(turn_id)
+// );`
+//
