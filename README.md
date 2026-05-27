@@ -15,6 +15,5 @@ blackbox revert <turn-id> — reverses the diffs from a specific turn using git 
 blackbox blame <file:line> — tells you which prompt last touched that line
 blackbox status — shows DB path and session count
 ```
-```
 
-#STILL IN DEVELOPMENT. core features had no meaningful function other than for developer testing. Its still a skeleton 
+##  STILL IN DEVELOPMENT.Core features have no meaningful functionality other than for dev testing. Its still a skeleton 
