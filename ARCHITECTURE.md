@@ -8,6 +8,11 @@ a feature with confidence.
 > New here? Read sections 1–5 for the mental model, then jump to the package that
 > owns whatever you want to change (section 8), then read "How to make common
 > changes" (section 13).
+>
+> Preparing to **talk about this project** (interview, portfolio review, design
+> chat)? Read [Appendix A](#appendix-a-talking-about-this-project-interview-guide)
+> — it repackages everything below into layered pitches, a hard-problem story,
+> and model answers to the questions you'll be asked.
 
 ---
 
@@ -29,6 +34,8 @@ a feature with confidence.
 14. [Design decisions & FAQ](#14-design-decisions--faq)
 15. [Known limitations & edge cases](#15-known-limitations--edge-cases)
 16. [Glossary](#16-glossary)
+
+**Appendix:** [Talking about this project (interview guide)](#appendix-a-talking-about-this-project-interview-guide)
 
 ---
 
@@ -811,6 +818,177 @@ migration — existing databases use it.
 - **Turn** — one prompt plus the diff it produced. The core unit.
 - **Unified diff** — the standard `git`/`diff` patch format; what `revert`
   reverse-applies.
+
+---
+
+## Appendix A: Talking about this project (interview guide)
+
+Use this when you need to **speak** about BlackBox rather than change it — an
+interview "tell me about a project," a portfolio review, or a design chat.
+Sections 1–15 are the source of truth; this appendix repackages them into things
+you can say out loud, at whatever depth the conversation calls for. Everything
+here is accurate to what was actually built — don't claim beyond it.
+
+### A.1 — Three layered pitches
+
+Deliver the shortest one first, then go deeper only as the interviewer pulls you.
+
+**Elevator (~20 seconds):**
+> "BlackBox is a command-line tool I built that acts like a flight recorder for AI
+> coding assistants. It hooks into Claude Code and records every prompt alongside
+> the exact code changes that prompt produced — so you can replay a session, see
+> which prompt introduced a bug, or undo a single prompt's changes without
+> touching the rest of your work."
+
+**Overview (~90 seconds)** — add the *why* and the *how*:
+> "The motivation is that AI tools now generate code faster than people can review
+> it. Git only shows you the final state of your files; it can't tell you 'prompt
+> 3 added the cache, prompt 7 broke the auth check.' BlackBox adds that
+> prompt-level history.
+>
+> Technically it's a Go binary that installs two Claude Code hooks — one fires
+> when you submit a prompt, one when the agent finishes responding. On the first I
+> snapshot the repository; on the second I snapshot again and diff the two, and
+> that diff is exactly what the prompt changed. Everything is stored in a local
+> SQLite database, and I expose it through commands — log, show, revert, blame,
+> status — plus a small local web timeline."
+
+**Deep dive:** offer the hard problem (A.2), then walk the lifecycle diagram
+(§5) and the data model (§7). Let them steer.
+
+### A.2 — The hardest problem (when asked "what was hard?")
+
+Structure it problem → why it's hard → solution → proof. This is your strongest
+story; know it cold.
+
+> "The hardest part was capturing the diff for a *single prompt* without
+> disturbing the developer's own git work. Three things made it tricky. First,
+> plain `git diff` shows the cumulative change since the last commit, not
+> per-prompt deltas. Second, the obvious fix — staging or stashing to snapshot
+> state — would clobber whatever the developer had carefully staged. And third,
+> because each hook runs as its own short-lived process, there's no in-memory
+> state connecting the 'before' and 'after' moments.
+>
+> The solution has two parts. For the snapshot, I used a lesser-known git feature:
+> you can point git at a *different* index file with the `GIT_INDEX_FILE`
+> environment variable. So I stage the whole working tree into a throwaway index
+> and run `git write-tree` to hash it into a tree object — the real staging area
+> is never touched. Diffing two of those tree objects gives the exact per-prompt
+> patch. For the state problem, I keep the 'turn is open' state in the database —
+> a row whose `ended_at` is still null — instead of in memory, so the two separate
+> hook processes stay connected. I locked the safety property down with a test
+> that stages a change, takes a snapshot, and asserts `git status` is byte-for-byte
+> identical before and after."
+
+### A.3 — Design decisions you can defend
+
+Naming the decision *and* its reason (and the trade-off) is what signals
+engineering judgment.
+
+| Decision | Why | Trade-off |
+| --- | --- | --- |
+| Snapshot at **Stop**, not per tool call | A turn = a whole prompt; one before/after pair captures its net change cleanly | Manual edits *between* turns aren't attributed |
+| Store **real unified diffs**, not before/after blobs | Revert becomes one line (`git apply --reverse`); diffs are human-readable | Slightly more parsing when recording |
+| **Pure-Go SQLite** (`modernc`) | Single static binary, no CGO, trivial to distribute | Marginally slower than the C driver (irrelevant here) |
+| **Raw `net/http` + `html/template`** | Read-only two-page UI; zero deps, safe escaping for free | No rich interactivity (didn't need it) |
+| Hooks **exit 0, never print to stdout** | A failing hook must never block or pollute the user's Claude session | Errors are invisible unless you read the log file |
+
+### A.4 — Anticipated questions & strong answers
+
+**Q: Why not just make a git commit per prompt?**
+Commits would pollute the user's history and move `HEAD`, and they require a clean
+tree — but prompts constantly touch uncommitted work. Tree objects let me snapshot
+arbitrary working-tree state off to the side without creating commits.
+
+**Q: How does revert know it's safe?**
+I concatenate the turn's per-file patches and run `git apply --reverse` with a
+`--check` dry run first. If later edits changed the same lines, `--check` fails
+and I refuse the whole revert rather than half-applying it.
+
+**Q: How is blame line-precise?**
+For a `file:line` query I pull every turn that touched the file, newest first, and
+parse each patch's hunk headers — the `@@ -a,b +c,d @@` lines — to find the newest
+turn whose *new-side* range covers that line.
+
+**Q: What happens if it isn't a git repo?**
+It degrades gracefully: prompts are still recorded, but diffs, revert, and blame
+need git, and `init` warns you up front.
+
+**Q: How do you test something driven by external hooks?**
+Two layers. Unit tests for the git engine (the snapshot→diff→reverse round trip
+and the index-safety guarantee) and the hook installer (idempotent, non-destructive
+merge). Then an end-to-end test that feeds the binary the exact JSON Claude sends,
+run against an isolated `HOME` so it never touches my real database.
+
+**Q: How would you scale or productize it?**
+Support more agents — Cursor, Copilot — behind the same storage layer, since only
+the `capture` package is Claude-specific. Then session search, a richer replay UI,
+and team sync. Longer term, semantic queries like "which prompt introduced this
+behavior."
+
+**Q: What's the biggest limitation?**
+Turn granularity — I attribute the *net* change per prompt, so edits made by hand
+between prompts aren't linked to either. I chose that deliberately for simplicity;
+finer-grained capture via `PostToolUse` hooks is the natural next step.
+
+**Q: Why Go?**
+A self-contained CLI that shells out to git and ships as one binary is squarely in
+Go's wheelhouse — fast startup for the hook path, easy cross-compilation, and a
+strong standard library (I used `net/http`, `html/template`, `database/sql`,
+`os/exec` with no third-party framework).
+
+### A.5 — For a non-technical interviewer
+
+Lead with the analogy and the value; skip the git internals unless asked:
+> "It's a flight recorder for AI coding. When a developer asks an AI assistant to
+> change their code, BlackBox quietly saves each instruction and the exact edits it
+> caused — so if something breaks later, they can see which instruction did it and
+> undo just that one, instead of guessing or unwinding everything."
+
+### A.6 — If asked to whiteboard it
+
+Three drawings cover almost every follow-up (all are already in this doc):
+
+1. **The two-snapshot picture** (§4): prompt submitted → snapshot *before* → agent
+   edits → agent stops → snapshot *after* → the difference *is* the turn.
+2. **The lifecycle** (§5): who calls the binary and when (the two hooks), and that
+   the "open turn" state lives in the DB because hooks are separate processes.
+3. **The data model** (§7): `sessions → turns → diffs`, three tables.
+
+### A.7 — What you learned / would build next
+
+**Learned:** how to reach past a tool's everyday commands into its plumbing
+(`GIT_INDEX_FILE`, `write-tree`); how to design around *stateless* processes by
+persisting state instead of holding it in memory; and an error-handling discipline
+where an auxiliary tool must fail *invisibly* rather than disrupt the thing it's
+observing.
+
+**Next:** multi-agent support, rename-aware diffs, an optional finer-grained
+(per-edit) capture mode, and a richer in-browser session replay.
+
+### A.8 — Fast-facts sheet
+
+Drop these when you want to sound precise:
+
+- **Language/runtime:** Go 1.25+, no CGO.
+- **Storage:** local SQLite via pure-Go `modernc.org/sqlite`; three tables
+  (sessions, turns, diff).
+- **Structure:** six packages — one CLI (`cmd/BlackBox`) plus five internal
+  (`capture`, `db`, `git`, `hooks`, `ui`); no import cycles, `db` and `git` are
+  the leaves.
+- **Commands:** `init`, `hook`, `log`, `show`, `revert`, `blame`, `status`,
+  `serve`.
+- **Integration:** Claude Code hooks — `UserPromptSubmit` and `Stop`.
+- **Core mechanism:** throwaway `GIT_INDEX_FILE` + `git write-tree` tree
+  snapshots, diffed per turn; revert = `git apply --reverse` (with a `--check` dry
+  run).
+- **UI:** `net/http` + `html/template` timeline at `localhost:7331`.
+- **Tests:** git round-trip, index-safety guarantee, hook-install idempotency,
+  plus an end-to-end pipeline test.
+
+> Honesty guardrail: this is a solo portfolio project, not production software with
+> users. Say so if asked — "I built it to explore the problem space" is a stronger
+> answer than implying scale it doesn't have.
 
 ---
 
