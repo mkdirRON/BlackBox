@@ -405,6 +405,34 @@ func (d *DB) FileHistory(filePath string) ([]FileTouch, error) {
 	return out, rows.Err()
 }
 
+// SessionIDsWithPrefix returns full session ids that begin with the given
+// prefix, so the CLI can accept the short ids shown by `blackbox log`.
+func (d *DB) SessionIDsWithPrefix(prefix string) ([]string, error) {
+	return d.idsWithPrefix("SELECT session_id FROM sessions WHERE session_id LIKE ?", prefix)
+}
+
+// TurnIDsWithPrefix returns full turn ids that begin with the given prefix.
+func (d *DB) TurnIDsWithPrefix(prefix string) ([]string, error) {
+	return d.idsWithPrefix("SELECT turn_id FROM turns WHERE turn_id LIKE ?", prefix)
+}
+
+func (d *DB) idsWithPrefix(query, prefix string) ([]string, error) {
+	rows, err := d.conn.Query(query, prefix+"%")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
 // Counts returns the number of sessions, turns, and diffs on record.
 func (d *DB) Counts() (sessions, turns, diffs int, err error) {
 	if err = d.conn.QueryRow(`SELECT COUNT(*) FROM sessions`).Scan(&sessions); err != nil {
