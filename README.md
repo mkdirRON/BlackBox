@@ -205,6 +205,9 @@ go test ./...      # unit tests (git round-trip + safety, hook installation)
 go vet ./...
 ```
 
+For a top-to-bottom explanation of the codebase — architecture, data model, the
+capture mechanism, and how to contribute — see **[ARCHITECTURE.md](ARCHITECTURE.md)**.
+
 Layout:
 
 ```
