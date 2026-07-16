@@ -1,0 +1,15 @@
+# Compiled binaries
+/cmd/BlackBox/BlackBox
+/blackbox
+/BlackBox
+*.exe
+
+# Local BlackBox data / logs
+.blackbox/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Go
+/vendor/
